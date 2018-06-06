@@ -11,13 +11,13 @@
 
 #include <stdio.h>
 
-#define LENGTH 50
 #define WIDTH 50
+#define LENGTH 50
 #define MAX_NODE 100
 #define FAT 0.25
 #define MIN_HEIGHT 1.2
 #define RADIUS 6
-#define GROUP 10
+#define MAX_GROUP 10
 
 struct node {
     int person;
@@ -26,6 +26,8 @@ struct node {
     int checked;
     int idx;
     int marked;
+    double capacity;
+    double delay;
     double stability;
     double reachability;
     double x;
@@ -35,7 +37,7 @@ struct node {
     double timer;
     double height;
     double distance[MAX_NODE];
-    double distance_group[GROUP];
+    double distance_group[MAX_GROUP];
     unsigned int num_child;
     struct node *child[MAX_NODE];
     unsigned int num_blockers;
@@ -46,7 +48,7 @@ struct node {
 };
 
 struct graph {
-    struct node *coordinate[LENGTH][WIDTH];
+    struct node *coordinate[WIDTH][LENGTH];
     struct node AP;
     unsigned int population;
     struct node *people;
@@ -60,14 +62,15 @@ struct stat {
     int trials;
 };
 
-struct graph *generate_graph_rand(unsigned int num, int ap_x, int ap_y, double ap_height, int num_mirrors);
-struct graph *generate_graph_unif(int ap_x, int ap_y, double ap_height);
-struct graph *generate_graph_group(int ap_x, int ap_y, double ap_height, int group_size);
-void find_group(struct graph *graph, int group_size);
-struct graph *generate_graph_poisson(unsigned int num, int ap_x, int ap_y, double ap_height, int num_mirrors, int region);
-void visualize_graph(struct graph *graph);
-void visualize_stability(struct graph *graph);
-void visualize_reachability(struct graph *graph);
+struct graph *generate_graph_unif(int width, int length, int ap_x, int ap_y, int population, double ap_height);
+struct graph *generate_graph_group(int width, int length, int ap_x, int ap_y, double ap_height, int population, int group_size);
+void fill_group(struct graph *graph, int group_size);
+void sort_group_distance(struct graph *graph);
+void sort_group_capacity(struct graph *graph);
+struct graph *generate_graph_poisson(int width, int length, int ap_x, int ap_y, int num, double ap_height, int region);
+void visualize_graph(int width, int length, struct graph *graph);
+void visualize_stability(int width, int length, struct graph *graph);
+void visualize_reachability(int width, int length, struct graph *graph);
 void destroy_resources(struct graph *graph);
 
 double check_blockage(struct graph *graph);
@@ -78,6 +81,8 @@ void find_parents(struct graph *graph);
 void find_distance(struct graph *graph);
 void sort_parent_distance(struct graph *graph);
 void sort_parent_height(struct graph *graph);
+void sort_parent_capacity(struct graph *graph);
+void sort_group_parent_capacity(struct graph *graph);
 void update_parents(struct graph *graph, int t);
 void update_parents_depth2(struct graph *graph);
 double update_parents_group(struct graph *graph, int t);
@@ -107,9 +112,8 @@ double update_stable_height(struct graph *graph, double z);
 double update_stable_close(struct graph *graph, double z);
 double update_stable_close_height(struct graph *graph, double z);
 
-void update_graph(struct graph *graph);
-void update_graph_waypoint(struct graph *graph);
-void update_graph_waypoint_group(struct graph *graph);
+void update_graph(int width, int length, struct graph *graph);
+void update_graph_waypoint_group(int width, int length,struct graph *graph);
 void shift_index(struct graph *graph);
 void sort_height_index(struct graph *graph);
 void sort_stability(struct graph *graph);
@@ -127,6 +131,9 @@ double calc_stability(struct graph *graph, int t);
 double get_jain(struct graph *graph);
 double get_stabl(struct graph *graph);
 double get_reach(struct graph *graph);
+void update_capacity_delay(struct graph *graph, int t);
+double get_capacity(struct graph *graph);
+double get_delay(struct graph *graph);
 
 void init_stat(struct stat *stat);
 void save_stat(struct graph *graph, struct stat *stat);

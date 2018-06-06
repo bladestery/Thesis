@@ -12,37 +12,39 @@
 #include <string.h>
 #include "sim.h"
 
-#define TRIALS 10000
+#define TRIALS 1000
 #define GAGO 200  //max timesteps
 
 int main(int argc, char *argv[]) {
-    if (argc != 7) {
+    if (argc != 9) {
         fprintf(stderr, "./main %%ui[Number of Nodes] \
+                                %%ui[X Dimension] \
+                                %%ui[Y Dimension] \
                                 %%ui[AP x-coordinate] \
                                 %%ui[AP y-coordinate] \
-                                %%ui[AP height] \
+                                %%ui[AP Height] \
                                 %%ui[Time Step] \
-                                %%ui[Group Size]\n");
+                                %%ui[Num AP]\n");
         return 1;
     }
     
     unsigned int num = atoi(argv[1]);
-    int ap_x = atoi(argv[2]);
-    int ap_y = atoi(argv[3]);
-    double ap_height = atof(argv[4]);
-    int timestep = atoi(argv[5]);
-    int grp_size = atoi(argv[6]);
-    int num_mirrors = 0;
+    int length = atoi(argv[3]);
+    int width = atoi(argv[2]);
+    int ap_x = atoi(argv[4]);
+    int ap_y = atoi(argv[5]);
+    double ap_height = atof(argv[6]);
+    int timestep = atoi(argv[7]);
+    int num_mirrors = atoi(argv[8]);
     int region = 4;
     if (num == 0) {
         fprintf(stderr, "Number of nodes must not be 0\n");
         return 1;
     }
-    
     time_t t;
     srand((unsigned) time(&t));
-    int group_size[5] = {1, 2, 4, 5, 10};
-    for (int i = 0; i < 5; i++) {
+    int group_size[6] = {1, 2, 4, 5, 8, 10};
+    for (int i = 0; i < sizeof(group_size); i++) {
         //ap_height = 0;
         fprintf(stdout, "group_size: %d\n", group_size[i]);
     //for (int j = 0; j <= 40; j +=2, ap_height += 0.2) {
@@ -59,24 +61,23 @@ int main(int argc, char *argv[]) {
         //double greedy_blockage[GAGO] = {0};
         //double perfect_blockage[GAGO] = {0};
         //double greedy_depth2_blockage[GAGO] = {0};
-        double stability[GAGO] = {0};
+        //double stability[GAGO] = {0};
         //double blockage_occurence_s[GAGO] = {0};
         //double stable[GAGO] = {0};
-        double fair[GAGO] = {0};
-        double reach[GAGO] = {0};
+        //double fair[GAGO] = {0};
+        //double reach[GAGO] = {0};
+        double capacity[GAGO] = {0};
+        double delay [GAGO] = {0};
         //struct stat height[81];
         //init_stat(height);
         double count = 0;
         for (int x = 0; x < TRIALS; x++) {
             //int fail = 0;
             //fprintf(stderr, "x:%d\n", x);
-            //struct graph *graph = generate_graph_poisson(num, ap_x, ap_y, ap_height, num_mirrors, region);
-            //struct graph *graph = generate_graph_unif(ap_x, ap_y, ap_height);
-            //struct graph *graph = generate_graph_rand(num, ap_x, ap_y, ap_height, 0);
-            struct graph *graph = generate_graph_group(ap_x, ap_y, ap_height, group_size[i]);
-            find_group(graph, group_size[i]);
-            //struct graph *graph = generate_graph_group(ap_x, ap_y, ap_height, grp_size);
-            //struct graph *graph = generate_graph_group_match(ap_x, ap_y, ap_height, grp_size);
+            struct graph *graph = generate_graph_group(width, length, ap_x, ap_y, ap_height, num, group_size[i]);
+            fill_group(graph, group_size[i]);
+            sort_group_capacity(graph);
+            //sort_group_distance(graph);
             if (graph == NULL) {
                 return 1;
             }
@@ -97,7 +98,8 @@ int main(int argc, char *argv[]) {
             //visualize_graph(graph);
             find_parents(graph);
             find_distance(graph);
-            sort_parent_distance(graph);
+            //sort_parent_distance(graph);
+            sort_parent_capacity(graph);
             //sort_parent_height(graph);
             
             //ret = greedy_matching(graph, 0);
@@ -122,12 +124,17 @@ int main(int argc, char *argv[]) {
             if (ret > 0) {
                 blockage_occurence_m[0]++;
             }*/
-
+            
             ret = group_matching(graph, 0);
+            
             //ret = stable_matching_close(graph);
             //ret = stable_matching(graph, 0);
             //ret = stable_matching_close_height(graph);
             //ret = stable_matching_height(graph);
+            
+            update_capacity_delay(graph, 0);
+            capacity[0] += get_capacity(graph);
+            delay[0] += get_delay(graph);
             /*
             stable[0] += ret;
             if (((int)(ret + 0.5)) > 0) {
@@ -145,14 +152,13 @@ int main(int argc, char *argv[]) {
             */
             for (int y = 1; y < timestep; y++) {
                 //update_graph(graph); //random
-                //update_graph_waypoint(graph); //random waypoint
-                update_graph_waypoint_group(graph); //random waypoint group
-                //visualize_graph(graph);
+                update_graph_waypoint_group(width, length, graph); //random waypoint group
                 //shift_index(graph);
                 //sort_stability(graph);
                 //sort_reachability(graph);
-                
+
                 ret = update_blockage(graph);
+                sort_group_parent_capacity(graph);
                 /*
                 num_blocked[y] += ret;
                 if (((int)(ret + 0.5)) > 0) {
@@ -170,6 +176,7 @@ int main(int argc, char *argv[]) {
                 */
                 find_distance(graph);
                 sort_parent_distance(graph);
+                //sort_parent_capacity(graph);
                 
                 //ret = update_greedy(graph, y);
                 //ret = update_greedy_stable(graph, y);
@@ -199,6 +206,7 @@ int main(int argc, char *argv[]) {
                 //ret = update_stable_fair(graph, ret, y);
                 //ret = update_group(graph, ret, y);
                 //ret = update_group_stable(graph, ret, y);
+
                 ret = update_group_fair(graph, ret, y);
                 /*
                 stable[y] += ret;
@@ -244,22 +252,26 @@ int main(int argc, char *argv[]) {
                     fail = 1;
                 }
                 stability[y] += calc_stability(graph, y);
-                //visualize_stability(graph);
-                //visualize_reachability(graph);
                 fair[y] += get_stabl(graph);
                 if (fail == 1) {
                     reach[y] += get_reach(graph);
                 }
                  */
+                
+                update_capacity_delay(graph, y);
+                capacity[y] += get_capacity(graph);
+                delay[y] += get_delay(graph);
             }
             /*
             if (fail == 1) {
                 count++;
             }*/
+            /*
             ret = get_reach(graph);
             if (ret > count) {
                 count = ret;
             }
+             */
             //save_stat(graph, height);
             destroy_resources(graph);
         }
@@ -269,6 +281,14 @@ int main(int argc, char *argv[]) {
             fprintf(stdout, "%.4f,", height[x].stability / height[x].trials);
         }
         */
+        fprintf(stdout, "Average HMD Data Rate (Gbps):\n");
+        for (int y = 0; y < timestep; y++) {
+            fprintf(stdout, "%.4f,", capacity[y] / TRIALS / 1000000000);
+        }
+        fprintf(stdout, "\nAverage Delay (ms):\n");
+        for (int y = 0; y < timestep; y++) {
+            fprintf(stdout, "%.4f,", delay[y] / TRIALS);
+        }
         /*
         fprintf(stdout, "Matching Failure: %.2f\n", count / TRIALS * 100);
         fprintf(stdout, "Max Unreachability per Node:\n");
@@ -295,10 +315,9 @@ int main(int argc, char *argv[]) {
         for (int y = 0; y < timestep; y++) {
             fprintf(stdout, "%.4f,", blockage_occurence_g[y] * 100 / TRIALS);
         }*/
-        fprintf(stdout, "%f", count);
+        //fprintf(stdout, "%f", count);
         
         fprintf(stdout, "\n");
-    
     }
         
     //}
