@@ -17,16 +17,18 @@
 #define SPACE 0
 #define EXPO 2
 #define DEV 5.8
-#define BANDWIDTH 7000000000
+#define BANDWIDTH 2160000000
 #define PI 3.1415926535
 #define LIGHT 299700000
-#define GHZ 60000000000
+#define GHZ 61560000000
 #define LIMIT 5598720000
+#define IMAGE 62208000
+
 #define RENDER 6.1
 #define BEAM 1.01
-#define FOUR 2.53
-#define IMAGE 62208000
 #define NET 2.4
+#define BLOCK 295
+#define BEACON 25
 
 double gaussrand() {
     static double V1, V2, S;
@@ -71,16 +73,20 @@ void init_node(struct node *coordinate[WIDTH][LENGTH], struct node *node, int x,
     memset(node->blockers, 0, sizeof(struct node *) * MAX_NODE);
     memset(node->parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(node->distance, 0, sizeof(double) * MAX_NODE);
-    memset(node->pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(node->pp, 0, sizeof(struct node *) * MAXT);
     node->blocked = 0;
     node->stability = 0;
     node->checked = 0;
     node->x_dest = node->x;
     node->y_dest = node->y;
     node->timer = 0;
+    node->marked = 0;
+    node->reachability = 0;
+    node->capacity = 0;
+    node->delay = 0;
 }
 
-void init_node_group(int width, int length, struct node *coordinate[WIDTH][LENGTH], struct node *people, int x, int y, int group_size, int idx) {
+void init_node_group(int width, int length, struct node *coordinate[WIDTH][LENGTH], struct node *people, int x, int y, int group_size, int idx, int radius) {
     struct node *node = &people[idx];
     node->person = 1;
     node->x = x;
@@ -97,7 +103,7 @@ void init_node_group(int width, int length, struct node *coordinate[WIDTH][LENGT
     memset(node->parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(node->distance, 0, sizeof(double) * MAX_NODE);
     memset(node->distance_group, 0, sizeof(double) * MAX_GROUP);
-    memset(node->pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(node->pp, 0, sizeof(struct node *) * MAXT);
     node->blocked = 0;
     node->stability = 0;
     node->checked = 0;
@@ -117,8 +123,8 @@ void init_node_group(int width, int length, struct node *coordinate[WIDTH][LENGT
         while (1) {
             int x1 = x, y1 = y, tempx = 0, tempy = 0;
             while (tempx == 0 && tempy == 0) {
-                tempx = rand() % RADIUS;
-                tempy = rand() % RADIUS;
+                tempx = rand() % radius;
+                tempy = rand() % radius;
             }
             x1 = (rand()%2 == 0) ? x1 + tempx : x1 - tempx;
             y1 = (rand()%2 == 0) ? y1 + tempy : y1 - tempy;
@@ -147,7 +153,7 @@ void init_node_group(int width, int length, struct node *coordinate[WIDTH][LENGT
         memset(node2->parent, 0, sizeof(struct node *) * MAX_NODE);
         memset(node2->distance, 0, sizeof(double) * MAX_NODE);
         memset(node2->distance_group, 0, sizeof(double) * MAX_GROUP);
-        memset(node2->pp, 0, sizeof(struct node *) * MAX_NODE);
+        memset(node2->pp, 0, sizeof(struct node *) * MAXT);
         node2->blocked = 0;
         node2->stability = 0;
         node2->checked = 0;
@@ -196,7 +202,7 @@ void init_node_poisson(int length, int width, struct node *coordinate[WIDTH][LEN
     memset(node->parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(node->distance, 0, sizeof(double) * MAX_NODE);
     memset(node->distance_group, 0, sizeof(double) * MAX_GROUP);
-    memset(node->pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(node->pp, 0, sizeof(struct node *) * MAXT);
     node->blocked = 0;
     node->stability = 0;
     node->checked = 0;
@@ -204,6 +210,9 @@ void init_node_poisson(int length, int width, struct node *coordinate[WIDTH][LEN
     node->y_dest = node->y;
     node->timer = 0;
     node->marked = 0;
+    node->reachability = 0;
+    node->capacity = 0;
+    node->delay = 0;
 }
 
 struct graph *generate_graph_unif(int width, int length, int ap_x, int ap_y, int population, double ap_height) {
@@ -213,7 +222,6 @@ struct graph *generate_graph_unif(int width, int length, int ap_x, int ap_y, int
     }
     
     struct graph *ret = (struct graph *) malloc(sizeof(struct graph));
-    //ret->coordinate = (struct node ***) malloc(sizeof(struct node *) * length * width);
     memset(ret->coordinate, 0, sizeof(struct node *) * length * width);
     
     ret->population = population;
@@ -243,25 +251,32 @@ struct graph *generate_graph_unif(int width, int length, int ap_x, int ap_y, int
     memset(ret->AP.parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(ret->AP.distance, 0, sizeof(double) * MAX_NODE);
     memset(ret->AP.distance_group, 0, sizeof(double) * MAX_GROUP);
-    memset(ret->AP.pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(ret->AP.pp, 0, sizeof(struct node *) * MAXT);
     memset(ret->rr, 0, sizeof(struct node *) * MAX_NODE);
     
     ret->people = (struct node *) malloc(sizeof(struct node) * 100);
     int num = 0;
     double dlim = sqrt(ret->population);
     int lim = sqrt(ret->population);
-    if (lim != ((int) (dlim + 0.5))) {
+    if (dlim != lim) {
         lim += 1;
     }
-    int intx = width/sqrt(ret->population);
-    int inty = length/sqrt(ret->population);
+    int intx = width/lim;
+    int inty = length/lim;
     for (int i = intx; i < width; i+= intx) {
         for (int j = inty; j < length; j+= inty) {
             init_node(ret->coordinate, &ret->people[num++], i, j);
             if (num >= ret->population) {
+                for (int i = 0; i < ret->population; i++) {
+                    ret->rr[i] = &ret->people[i];
+                }
                 return ret;
             }
         }
+    }
+    
+    for (int i = 0; i < ret->population; i++) {
+        ret->rr[i] = &ret->people[i];
     }
     
     return ret;
@@ -274,8 +289,7 @@ struct graph *generate_graph_group(int width, int length, int ap_x, int ap_y, do
     }
     
     struct graph *ret = (struct graph *) malloc(sizeof(struct graph));
-    //ret->coordinate = (struct node ***) malloc(sizeof(struct node *) * length * width);
-    memset(ret->coordinate, 0, sizeof(struct node *) * length * width);
+    memset(ret->coordinate, 0, sizeof(struct node *) * LENGTH * WIDTH);
     
     ret->population = population;
     ret->coordinate[ap_x][ap_y] = &(ret->AP);
@@ -308,7 +322,7 @@ struct graph *generate_graph_group(int width, int length, int ap_x, int ap_y, do
     memset(ret->AP.parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(ret->AP.distance, 0, sizeof(double) * MAX_NODE);
     memset(ret->AP.distance_group, 0, sizeof(double) * MAX_GROUP);
-    memset(ret->AP.pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(ret->AP.pp, 0, sizeof(struct node *) * MAXT);
     memset(ret->rr, 0 , sizeof(struct node *) * MAX_NODE);
     
     ret->people = (struct node *) malloc(sizeof(struct node) * population);
@@ -317,23 +331,72 @@ struct graph *generate_graph_group(int width, int length, int ap_x, int ap_y, do
     int l = ret->population / group_size;
     for (; i < l; i++) {
         while (1) {
-            int x = (rand() % (length - 10)) + 5;
-            int y = (rand() % (width - SPACE - 10)) + 5;
-            if (ret->coordinate[x][y + SPACE] == NULL) {
-                init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, group_size, num);
-                num += group_size;
-                break;
+            if (width <= 5  || length <= 5) {
+                int x = (rand() % (length - 2)) + 2;
+                int y = (rand() % (width - SPACE - 2)) + 2;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, group_size, num, 3);
+                    num += group_size;
+                    break;
+                }
+            } else if (width <= 10 || length <= 10) {
+                int x = (rand() % (length - 4)) + 2;
+                int y = (rand() % (width - SPACE - 4)) + 2;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, group_size, num, 4);
+                    num += group_size;
+                    break;
+                }
+            } else if (width <= 20 || length <= 20) {
+                int x = (rand() % (length - 8)) + 4;
+                int y = (rand() % (width - SPACE - 8)) + 4;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, group_size, num, 5);
+                    num += group_size;
+                    break;
+                }
+            } else {
+                int x = (rand() % (length - 10)) + 5;
+                int y = (rand() % (width - SPACE - 10)) + 5;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, group_size, num, 6);
+                    num += group_size;
+                    break;
+                }
             }
         }
     }
-    //fprintf(stderr, "leftover: %d\n",ret->population-(i)*group_size);
+    
     if (i * group_size < ret->population) {
         while (1) {
-            int x = (rand() % (length - 10)) + 5;
-            int y = (rand() % (width - SPACE - 10)) + 5;
-            if (ret->coordinate[x][y + SPACE] == NULL) {
-                init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, ret->population-i*group_size, num);
-                break;
+            if (width <= 5  || length <= 5) {
+                int x = (rand() % (length - 2)) + 2;
+                int y = (rand() % (width - SPACE - 2)) + 2;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, ret->population-i*group_size, num, 3);
+                    break;
+                }
+            } else if (width <= 10 || length <= 10) {
+                int x = (rand() % (length - 4)) + 2;
+                int y = (rand() % (width - SPACE - 4)) + 2;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, ret->population-i*group_size, num, 4);
+                    break;
+                }
+            } else if (width <= 20 || length <= 20) {
+                int x = (rand() % (length - 8)) + 4;
+                int y = (rand() % (width - SPACE - 8)) + 4;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, ret->population-i*group_size, num, 5);
+                    break;
+                }
+            } else {
+                int x = (rand() % (length - 10)) + 5;
+                int y = (rand() % (width - SPACE - 10)) + 5;
+                if (ret->coordinate[x][y + SPACE] == NULL) {
+                    init_node_group(width, length, ret->coordinate, ret->people, x, y + SPACE, ret->population-i*group_size, num, 6);
+                    break;
+                }
             }
         }
     }
@@ -417,14 +480,14 @@ void sort_group_capacity(struct graph *graph) {
         double temp;
         for (int y = 0; y < graph->people[i].num_blockers; y++) {
             for (int z = y + 1; z < graph->people[i].num_blockers; z++) {
-                if (graph->people[i].blockers[y].capacity > graph->people[i].blockers[z].capacity) {
+                if (graph->people[i].blockers[y]->capacity > graph->people[i].blockers[z]->capacity) {
                     temp = graph->people[i].distance_group[y];
                     graph->people[i].distance_group[y] = graph->people[i].distance_group[z];
                     graph->people[i].distance_group[z] = temp;
                     temp_node = graph->people[i].blockers[y];
                     graph->people[i].blockers[y] = graph->people[i].blockers[z];
                     graph->people[i].blockers[z] = temp_node;
-                } else if (graph->people[i].blockers[y].capacity == graph->people[i].blockers[z].capacity) {
+                } else if (graph->people[i].blockers[y]->capacity == graph->people[i].blockers[z]->capacity) {
                     if (graph->people[i].distance_group[y] < graph->people[i].distance_group[z]) {
                         temp = graph->people[i].distance_group[y];
                         graph->people[i].distance_group[y] = graph->people[i].distance_group[z];
@@ -450,8 +513,7 @@ struct graph *generate_graph_poisson(int width, int length, int ap_x, int ap_y, 
     }
     
     struct graph *ret = (struct graph *) malloc(sizeof(struct graph));
-    //ret->coordinate = (struct node ***) malloc(sizeof(struct node *) * length * width);
-    memset(ret->coordinate, 0, sizeof(struct node *) * length * width);
+    memset(ret->coordinate, 0, sizeof(struct node *) * LENGTH * WIDTH);
     
     ret->population = num;
     ret->coordinate[ap_x][ap_y] = &(ret->AP);
@@ -481,7 +543,7 @@ struct graph *generate_graph_poisson(int width, int length, int ap_x, int ap_y, 
     memset(ret->AP.parent, 0, sizeof(struct node *) * MAX_NODE);
     memset(ret->AP.distance, 0, sizeof(double) * MAX_NODE);
     memset(ret->AP.distance_group, 0, sizeof(double) * MAX_GROUP);
-    memset(ret->AP.pp, 0, sizeof(struct node *) * MAX_NODE);
+    memset(ret->AP.pp, 0, sizeof(struct node *) * MAXT);
     memset(ret->rr, 0, sizeof(struct node *) * MAX_NODE);
     
     ret->people = (struct node *) malloc(sizeof(struct node) * num);
@@ -504,6 +566,10 @@ struct graph *generate_graph_poisson(int width, int length, int ap_x, int ap_y, 
         }
     }
     
+    for (int i = 0; i < ret->population; i++) {
+        ret->rr[i] = &ret->people[i];
+    }
+    
     return ret;
 }
 
@@ -511,12 +577,9 @@ void visualize_graph(int width, int length, struct graph *graph) {
     for (int j = length - 1; j >= 0; j--) {
         for (int i = 0; i < width; i++) {
             if (graph->coordinate[i][j] != NULL) {
-                //fprintf(stderr, "blocked:%d\n", graph->coordinate[i][j]->blocked);
                 if (graph->coordinate[i][j] == &(graph->AP)) {
                     fprintf(stderr, "* ");
-                } /*else if (graph->coordinate[i][j]->person == 0) {
-                    fprintf(stderr, "# ");
-                }*/ else if (graph->coordinate[i][j]->blocked > 0) {
+                } else if (graph->coordinate[i][j]->blocked > 0) {
                     fprintf(stderr, "+ ");
                 } else {
                     fprintf(stderr, "O ");
@@ -535,18 +598,15 @@ void visualize_stability(int width, int length, struct graph *graph) {
     for (int j = length - 1; j >= 0; j--) {
         for (int i = 0; i < width; i++) {
             if (graph->coordinate[i][j] != NULL) {
-                //fprintf(stderr, "blocked:%d\n", graph->coordinate[i][j]->blocked);
                 if (graph->coordinate[i][j] == &(graph->AP)) {
                     fprintf(stderr, "*  ");
-                } /*else if (graph->coordinate[i][j]->person == 0) {
-                   fprintf(stderr, "# ");
-                   }*/ else {
-                       if ((int) (graph->coordinate[i][j]->stability + 0.5) > 9) {
-                           fprintf(stderr, "%d ",(int) (graph->coordinate[i][j]->stability + 0.5));
-                       } else {
-                           fprintf(stderr, "%d  ",(int) (graph->coordinate[i][j]->stability + 0.5));
-                       }
+                } else {
+                   if ((int) (graph->coordinate[i][j]->stability + 0.5) > 9) {
+                       fprintf(stderr, "%d ",(int) (graph->coordinate[i][j]->stability + 0.5));
+                   } else {
+                       fprintf(stderr, "%d  ",(int) (graph->coordinate[i][j]->stability + 0.5));
                    }
+                }
             } else {
                 fprintf(stderr, "-  ");
             }
@@ -561,16 +621,13 @@ void visualize_reachability(int width, int length, struct graph *graph) {
     for (int j = length - 1; j >= 0; j--) {
         for (int i = 0; i < width; i++) {
             if (graph->coordinate[i][j] != NULL) {
-                //fprintf(stderr, "blocked:%d\n", graph->coordinate[i][j]->blocked);
                 if (graph->coordinate[i][j] == &(graph->AP)) {
                     fprintf(stderr, "* ");
-                } /*else if (graph->coordinate[i][j]->person == 0) {
-                   fprintf(stderr, "# ");
-                   }*/ else if (graph->coordinate[i][j]->blocked == 1) {
-                       fprintf(stderr, "+ ");
-                   } else {
-                       fprintf(stderr, "O ");
-                   }
+                } else if (graph->coordinate[i][j]->blocked == 1) {
+                   fprintf(stderr, "+ ");
+                } else {
+                    fprintf(stderr, "O ");
+                }
             } else {
                 fprintf(stderr, "- ");
             }
@@ -588,6 +645,22 @@ void destroy_resources(struct graph *graph) {
         free(graph->mirrors);
     }
     free(graph);
+}
+
+void sort_pointer(struct graph *graph, struct node *node[MAX_NODE]) {
+    for (int x = 0; x < graph->population; x++) {
+        node[x] = &graph->people[x];
+    }
+    struct node *temp = NULL;
+    for (int x = 0; x < graph->population; x++) {
+        for (int y = x + 1; y < graph->population; y++) {
+            if (node[x]->height > node[y]->height) {
+                temp = node[y];
+                node[y] = node[x];
+                node[x] = temp;
+            }
+        }
+    }
 }
 
 double DtoLOS(struct node *AP, struct node *target, struct node *candidate) {
@@ -819,6 +892,10 @@ double update_blockage(struct graph *graph) {
             graph->rr[x]->delay = 0;
             graph->AP.blockers[graph->AP.num_blockers++] = graph->rr[x];
         } else {
+            /*
+            if (graph->rr[x]->num_child > 0) {
+                fprintf(stderr, "graph->rr[x]->num_child: %d\n", graph->rr[x]->num_child);
+            }*/
             graph->rr[x]->blocked = 0;
             graph->rr[x]->capacity = calc_capacity(graph->rr[x], &graph->AP);
             //fprintf(stderr, "capacity: %f\n", graph->rr[x]->capacity);
@@ -910,12 +987,12 @@ void sort_group_parent_capacity(struct graph *graph) {
         double temp;
         for (int y = 0; y < graph->people[i].num_blockers; y++) {
             for (int z = y + 1; z < graph->people[i].num_blockers; z++) {
-                if (graph->people[i].blockers[y].capacity > graph->people[i].blockers[z].capacity) {
+                if (graph->people[i].blockers[y]->capacity > graph->people[i].blockers[z]->capacity) {
                     if (graph->people[i].traversed == 1) {
-                        if (graph->people[x].idx == y) {
-                            graph->people[x].idx = z;
-                        } else if (graph->people[x].idx == z) {
-                            graph->people[x].idx = y;
+                        if (graph->people[i].idx == y) {
+                            graph->people[i].idx = z;
+                        } else if (graph->people[i].idx == z) {
+                            graph->people[i].idx = y;
                         }
                     }
                     temp = graph->people[i].distance_group[y];
@@ -924,13 +1001,13 @@ void sort_group_parent_capacity(struct graph *graph) {
                     temp_node = graph->people[i].blockers[y];
                     graph->people[i].blockers[y] = graph->people[i].blockers[z];
                     graph->people[i].blockers[z] = temp_node;
-                } else if (graph->people[i].blockers[y].capacity == graph->people[i].blockers[z].capacity) {
+                } else if (graph->people[i].blockers[y]->capacity == graph->people[i].blockers[z]->capacity) {
                     if (graph->people[i].distance_group[y] < graph->people[i].distance_group[z]) {
                         if (graph->people[i].traversed == 1) {
-                            if (graph->people[x].idx == y) {
-                                graph->people[x].idx = z;
-                            } else if (graph->people[x].idx == z) {
-                                graph->people[x].idx = y;
+                            if (graph->people[i].idx == y) {
+                                graph->people[i].idx = z;
+                            } else if (graph->people[i].idx == z) {
+                                graph->people[i].idx = y;
                             }
                         }
                         temp = graph->people[i].distance_group[y];
@@ -1283,6 +1360,8 @@ double greedy_matching(struct graph *graph, int t) {
                 graph->AP.blockers[x]->pp[t] = graph->AP.blockers[x]->parent[y];
                 z++;
                 graph->AP.blockers[x]->checked = 1;
+                graph->AP.blockers[x]->blocked = 2;
+                //fprintf(stderr, "parent[y]->num_child: %d\t parent[y]->child[0]: %p\n", graph->AP.blockers[x]->parent[y]->num_child, graph->AP.blockers[x]->parent[y]->child[0]);
                 break;
             }
         }
@@ -1320,6 +1399,7 @@ double greedy_matching_depth2(struct graph *graph, double rem, int t) {
     return rem - z;
 }
 
+//Not updated for blocked = 2 in order for visualize_reachability to work
 double group_matching(struct graph *graph, int t) {
     double z = 0;
     int count = 0;
@@ -1596,6 +1676,7 @@ double stable_matching(struct graph *graph, int t) {
                         graph->AP.blockers[x]->checked = 1;
                         graph->AP.blockers[x]->idx = y;
                         graph->AP.blockers[x]->pp[t] = graph->AP.blockers[x]->parent[y];
+                        graph->AP.blockers[x]->blocked = 2;
                         count++;
                         z++;
                         break;
@@ -1603,8 +1684,10 @@ double stable_matching(struct graph *graph, int t) {
                                graph->AP.blockers[x]->parent[y]->child[0]->distance[graph->AP.blockers[x]->parent[y]->child[0]->idx]) {
                         graph->AP.blockers[x]->parent[y]->child[0]->checked = 0;
                         graph->AP.blockers[x]->parent[y]->child[0]->pp[t] = NULL;
+                        graph->AP.blockers[x]->parent[y]->child[0]->blocked = 1;
                         graph->AP.blockers[x]->parent[y]->child[0] = graph->AP.blockers[x];
                         graph->AP.blockers[x]->pp[t] = graph->AP.blockers[x]->parent[y];
+                        graph->AP.blockers[x]->blocked = 2;
                         graph->AP.blockers[x]->checked = 1;
                         graph->AP.blockers[x]->idx = y;
                         break;
@@ -1612,9 +1695,11 @@ double stable_matching(struct graph *graph, int t) {
                                graph->AP.blockers[x]->parent[y]->child[0]->distance[graph->AP.blockers[x]->parent[y]->child[0]->idx]) {
                         if (graph->AP.blockers[x]->height > graph->AP.blockers[x]->parent[y]->child[0]->height) {
                             graph->AP.blockers[x]->parent[y]->child[0]->checked = 0;
+                            graph->AP.blockers[x]->parent[y]->child[0]->blocked = 1;
                             graph->AP.blockers[x]->parent[y]->child[0]->pp[t] = NULL;
                             graph->AP.blockers[x]->parent[y]->child[0] = graph->AP.blockers[x];
                             graph->AP.blockers[x]->pp[t] = graph->AP.blockers[x]->parent[y];
+                            graph->AP.blockers[x]->blocked = 2;
                             graph->AP.blockers[x]->checked = 1;
                             graph->AP.blockers[x]->idx = y;
                             break;
@@ -3981,9 +4066,8 @@ void update_graph_waypoint_group(int width, int length, struct graph *graph) {
                         }
                         increment++;
                     }
-                    if (graph->people[x].x - increment < 0) {
-                        graph->people[x].timer++;
-                    }
+                    
+                    graph->people[x].timer++;
                 } else {
                     while (graph->people[x].x + increment < width) {
                         if (graph->coordinate[(int)(graph->people[x].x + increment + 0.5)][(int)(graph->people[x].y + 0.5)] == NULL) {
@@ -3994,9 +4078,8 @@ void update_graph_waypoint_group(int width, int length, struct graph *graph) {
                         }
                         increment++;
                     }
-                    if (graph->people[x].x + increment >= width) {
-                        graph->people[x].timer++;
-                    }
+                    
+                    graph->people[x].timer++;
                 }
             }
             if (graph->people[x].y != graph->people[x].y_dest) {
@@ -4011,9 +4094,8 @@ void update_graph_waypoint_group(int width, int length, struct graph *graph) {
                         }
                         increment++;
                     }
-                    if (graph->people[x].y - increment < 0) {
-                        graph->people[x].timer++;
-                    }
+                    
+                    graph->people[x].timer++;
                 } else {
                     while (graph->people[x].y + increment < length) {
                         if (graph->coordinate[(int)(graph->people[x].x + 0.5)][(int)(graph->people[x].y + increment + 0.5)] == NULL) {
@@ -4024,9 +4106,8 @@ void update_graph_waypoint_group(int width, int length, struct graph *graph) {
                         }
                         increment++;
                     }
-                    if (graph->people[x].y + increment >= length) {
-                        graph->people[x].timer++;
-                    }
+                    
+                    graph->people[x].timer++;
                 }
             }
             
@@ -4072,20 +4153,23 @@ void update_graph_waypoint_group(int width, int length, struct graph *graph) {
                 }
             }
             
-            if (graph->people[x].timer >= 10) {
-                graph->people[x].timer = rand() % 5;
-                graph->people[x].x_dest = rand() % width;
-                graph->people[x].y_dest = rand() % length;
+            if (graph->people[x].timer >= length || graph->people[x].timer >= width) {
+                graph->people[x].timer = 0;
+                do {
+                    graph->people[x].x_dest = rand() % width;
+                    graph->people[x].y_dest = rand() % length;
+                } while (graph->people[x].x_dest == graph->AP.x && graph->people[x].y_dest == graph->AP.y);
             }
-        } else if (graph->people[x].timer != 0) {
+        } else if (graph->people[x].timer > 0) {
             if (graph->people[x].timer > 5) {
                 graph->people[x].timer = rand() % 5;
             }
             graph->people[x].timer--;
         } else {
-            graph->people[x].timer = rand() % 5;
-            graph->people[x].x_dest = rand() % width;
-            graph->people[x].y_dest = rand() % length;
+            do {
+                graph->people[x].x_dest = rand() % width;
+                graph->people[x].y_dest = rand() % length;
+            } while (graph->people[x].x_dest == graph->AP.x && graph->people[x].y_dest == graph->AP.y);
         }
     }
 }
@@ -4157,6 +4241,7 @@ int match(struct node *node, int t) {
             
             if (node->parent[x]->num_child == 0 || match(node->parent[x]->child[0], t)) {
                 node->parent[x]->child[0] = node;
+                node->blocked = 2;
                 node->pp[t] = node->parent[x];
                 node->parent[x]->num_child = 1;
                 return 1;
@@ -4443,7 +4528,7 @@ double get_reach(struct graph *graph) {
     return ret;
 }
 
-void update_capacity_delay(struct graph *graph, int t) {
+void update_capacity_delay_stationary(struct graph *graph, int t) {
     for (int x = 0; x < graph->population; x++) {
         if (graph->people[x].checked == 1) {
             continue;
@@ -4465,6 +4550,68 @@ void update_capacity_delay(struct graph *graph, int t) {
             if (graph->people[x].capacity > LIMIT) {
                 graph->people[x].capacity = LIMIT;
             }
+        }
+    }
+    
+    for (int x = 0; x < graph->population; x++) {
+        graph->people[x].checked = 0;
+    }
+}
+
+void update_capacity_delay(struct graph *graph, int t) {
+    for (int x = 0; x < graph->population; x++) {
+        if (graph->people[x].checked == 1) {
+            continue;
+        }
+        
+        if (graph->people[x].num_child > 0) {
+            //fprintf(stderr, "graph->people[x].num_child: %d\tgraph->people[x].child[0]: %p\n",  graph->people[x].num_child, graph->people[x].child[0]);
+            graph->people[x].child[0]->checked = 1;
+            graph->people[x].child[0]->capacity = calc_capacity(&graph->people[x], graph->people[x].child[0]);
+            
+            if (t > 0) {
+                if (graph->people[x].pp[t] != graph->people[x].pp[t-1]) {
+                    graph->people[x].delay = RENDER + NET + BEAM + BEACON + 2 * IMAGE * 1000 / graph->people[x].capacity;
+                    graph->people[x].child[0]->delay = graph->people[x].delay;
+                } else {
+                    graph->people[x].delay = RENDER + NET + BEAM + 2 * IMAGE * 1000 / graph->people[x].capacity;
+                    if (graph->people[x].child[0]->pp[t] != graph->people[x].child[0]->pp[t-1]) {
+                        graph->people[x].child[0]->delay = graph->people[x].delay + BEACON;
+                    } else {
+                        graph->people[x].child[0]->delay = graph->people[x].delay;
+                    }
+                }
+            } else {
+                graph->people[x].delay = RENDER + NET + BEAM + 2 * IMAGE * 1000 / graph->people[x].capacity;
+                graph->people[x].child[0]->delay = graph->people[x].delay;
+            }
+            
+            graph->people[x].capacity /= 2;
+            if (graph->people[x].capacity > LIMIT) {
+                graph->people[x].capacity = LIMIT;
+            }
+            
+            if (graph->people[x].child[0]->capacity > graph->people[x].capacity) {
+                graph->people[x].child[0]->capacity = graph->people[x].capacity;
+            } else if (graph->people[x].child[0]->capacity < graph->people[x].capacity) {
+                graph->people[x].child[0]->delay += (IMAGE  / graph->people[x].capacity * 1000) *
+                ((graph->people[x].capacity - graph->people[x].child[0]->capacity)/graph->people[x].capacity);
+            }
+        } else if (graph->people[x].blocked == 0 && graph->people[x].pp[t] == NULL) {
+            if (t > 0) {
+                if (graph->people[x].pp[t-1] != NULL) {
+                    graph->people[x].delay = RENDER + NET + BEAM + BEACON + IMAGE * 1000 / graph->people[x].capacity;
+                } else {
+                    graph->people[x].delay = RENDER + NET + BEAM + IMAGE * 1000 / graph->people[x].capacity;
+                }
+            } else {
+                graph->people[x].delay = RENDER + NET + BEAM + IMAGE * 1000 / graph->people[x].capacity;
+            }
+            if (graph->people[x].capacity > LIMIT) {
+                graph->people[x].capacity = LIMIT;
+            }
+        } else if (graph->people[x].blocked == 1 && graph->people[x].pp[t] == NULL) {
+            graph->people[x].delay = BLOCK;
         }
     }
     
